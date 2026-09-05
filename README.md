@@ -87,5 +87,5 @@ Licensing and source attribution are documented in `ATTRIBUTION.md` and `dashboa
 
 ## Authors
 
-**Artem Ostvald** · **Artem Borisov**  
+**Tim Ostvald** · **Artem Borisov**  
 HSE University · Digital Humanities · 2026
