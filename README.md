@@ -2,11 +2,11 @@
 
 Digital Humanities project on commemorative street names in Novosibirsk.
 
-Live dashboard: https://ostvald-city-memory-project-novosibirsk.static.hf.space/index.html
+**Live dashboard:** https://ostvald-city-memory-project-novosibirsk.static.hf.space/index.html
 
 The project asks a simple question: **who does the city commemorate through its street names?**
 
-We combined OpenStreetMap street data with Wikidata/Wikipedia biographical data, manually verified ambiguous cases and built an interactive dashboard for exploring gender, occupation, historical period and repeated commemoration.
+I combined OpenStreetMap street data with Wikidata/Wikipedia biographical data, manually verified ambiguous cases and built an interactive dashboard for exploring gender, occupation, historical period and repeated commemoration.
 
 ## Dataset
 
@@ -85,7 +85,7 @@ Sources: OpenStreetMap, Wikidata and Wikipedia. Ambiguous commemorative street n
 
 Licensing and source attribution are documented in `ATTRIBUTION.md` and `dashboard/photos/PHOTO_CREDITS.md`.
 
-## Authors
+## Author
 
-**Tim Ostvald** · **Artem Borisov**  
+**Tim Ostvald**  
 HSE University · Digital Humanities · 2026
