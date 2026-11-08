@@ -1,0 +1,65 @@
+name: Verify locally stored street geometry
+on:
+  push:
+    branches: [gh-pages]
+    paths: ['.github/workflows/verify-geometry.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: gh-pages}
+      - name: Verify GeoJSON matches important Novosibirsk streets
+        run: |
+          python - <<'PY'
+          import json
+          data=json.load(open('data/novosibirsk_streets.json'))
+          geo=json.load(open('data/novosibirsk_geometry.geojson'))
+          assert geo['type']=='FeatureCollection'
+          assert len(geo['features'])>2000
+          index={f['properties']['key']:f for f in geo['features']}
+          for name in ['улица Курчатова','улица Гоголя','улица Покрышкина','проспект Академика Лаврентьева','улица Ватутина']:
+              rec=next(x for x in data if x['street']==name)
+              key=f"{rec['street']}|{float(rec['lat']):.6f}|{float(rec['lon']):.6f}"
+              assert key in index, f'No geometry for {name}'
+              f=index[key]
+              paths=f['geometry']['coordinates']
+              assert f['geometry']['type']=='MultiLineString' and len(paths)>0
+              assert all(len(path)>=2 for path in paths)
+              assert all(80<lon<85 and 54<lat<57 for path in paths for lon,lat in path)
+              print(name,'segments:',len(paths),'points:',sum(map(len,paths)),'nearest:',f['properties']['distance_m'])
+          print('Records:',len(data),'Geometry features:',len(index))
+          PY
+      - name: Execute actual app.js local GeoJSON loader
+        run: |
+          node <<'JS'
+          const fs=require('node:fs');
+          const vm=require('node:vm');
+          const app=fs.readFileSync('dashboard/app.js','utf8');
+          const i=app.indexOf('let streetGeometryIndexPromise = null;');
+          const j=app.indexOf('\nfunction escapeOverpassString',i);
+          if(i<0||j<0) throw Error('Local GeoJSON loader not found');
+          const data=JSON.parse(fs.readFileSync('data/novosibirsk_streets.json','utf8'));
+          const geo=JSON.parse(fs.readFileSync('data/novosibirsk_geometry.geojson','utf8'));
+          let calls=0;
+          const context={
+            Map,console,streetData:data,streetGeometryCache:new Map(),
+            fetch:async url=>{calls++;if(!url.includes('novosibirsk_geometry.geojson'))throw Error('unexpected URL');return {ok:true,json:async()=>geo};}
+          };
+          vm.runInNewContext(app.slice(i,j)+'\nthis.test=fetchStreetGeometry;',context);
+          (async()=>{
+            for(const name of ['улица Курчатова','улица Гоголя','улица Покрышкина']){
+              const rec=data.find(x=>x.street===name);
+              const lines=await context.test(rec);
+              if(!lines.length || !lines[0].length)throw Error('No lines: '+name);
+              const [lat,lon]=lines[0][0];
+              if(!(lat>54&&lat<57&&lon>80&&lon<85))throw Error('Reversed coordinates: '+name);
+              console.log('Passed:',name,'segments:',lines.length);
+            }
+            if(calls!==1)throw Error('GeoJSON should load once: '+calls);
+            console.log('Browser-side mapping logic passed; fetch count:',calls);
+          })().catch(err=>{console.error(err);process.exitCode=1});
+          JS
