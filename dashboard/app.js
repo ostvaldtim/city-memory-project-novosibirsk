@@ -632,7 +632,7 @@ function updateMap() {
             const genderColor = GENDER_COLORS_MAP[d.gender] || COLORS.other;
 
             const marker = L.circleMarker([d.lat, d.lon], {
-                radius: 7,
+                radius: window.matchMedia('(max-width: 1200px)').matches ? 9 : 7,
                 fillColor: markerColor,
                 color: genderColor,
                 weight: 2,
@@ -654,7 +654,7 @@ function updateMap() {
 
             marker.on('click', () => selectStreetFromMap(d, marker));
             marker.on('mouseover', function () {
-                this.setRadius(10);
+                this.setRadius(selectedStreetMarker === this ? 12 : 10);
                 this.setStyle({ fillOpacity: 1 });
             });
             marker.on('mouseout', function () {
