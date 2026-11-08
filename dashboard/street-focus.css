@@ -1,0 +1,34 @@
+/* Selection label is visible immediately, even if Overpass is slow. */
+.street-focus-banner[hidden] { display: none !important; }
+.street-focus-banner {
+    position: absolute; z-index: 1100;
+    top: 12px; left: 12px; right: 12px;
+    max-width: 440px; box-sizing: border-box;
+    display: flex; align-items: center; gap: 9px;
+    padding: 10px 10px 10px 13px;
+    color: #fafaff; background: rgba(23, 25, 37, .96);
+    border: 1px solid rgba(255, 255, 255, .20);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, .40);
+    border-radius: 14px; backdrop-filter: blur(12px);
+}
+.street-focus-copy { display:flex; flex-direction:column; gap:4px; min-width:0; flex:1; }
+.street-focus-copy strong { font-size: .91rem; line-height:1.2; overflow-wrap:anywhere; }
+.street-focus-copy span { font-size:.72rem; color:#c7c9d6; line-height:1.25; }
+.street-focus-history, .street-focus-close {
+    border: 1px solid rgba(255,255,255,.19); color:#fafaff;
+    background:rgba(118,95,194,.23); border-radius:9px;
+    min-height:38px; cursor:pointer; font: 600 .78rem system-ui, sans-serif;
+}
+.street-focus-history { padding:0 12px; }
+.street-focus-close { min-width:36px; background:transparent; font-size:1.2rem; }
+@media (max-width:1200px) {
+    .street-focus-banner { top:8px; left:8px; right:8px; max-width:none; }
+}
+
+.leaflet-tooltip.selected-street-tooltip {
+    color: #fff; background: rgba(25, 21, 37, .97);
+    font-weight: 700; font-size: 13px;
+    border: 1px solid rgba(240, 227, 175, .86);
+    border-radius: 7px; box-shadow: 0 5px 18px rgba(0,0,0,.55);
+}
+.leaflet-tooltip-top.selected-street-tooltip::before { border-top-color: rgba(240, 227, 175, .86); }
