@@ -88,7 +88,7 @@ def main(source):
             missed["name_not_in_osm"] += 1
             continue
         point = Point(float(rec["lon"]) * 63700, float(rec["lat"]) * 111000)
-        component, distance = get_component(ways, point)
+        component, distance = get_component(ways, point, max_dist=6000 if rec.get('named_after_person') else 750)
         if not component:
             missed["geometry_far_from_point"] += 1
             continue
