@@ -19,6 +19,7 @@
     
     <!-- Стили приложения -->
     <link rel="stylesheet" href="style.css?v=egg-2026-06-17">
+    <link rel="stylesheet" href="mobile.css?v=2026-11-08-1">
 </head>
 <body>
 
@@ -46,7 +47,11 @@
         <main class="app-main">
             
             <!-- Левая панель аналитики -->
-            <section class="analytics-sidebar">
+            <section class="analytics-sidebar" id="analytics-sidebar" aria-label="Аналитика и фильтры">
+                <div class="mobile-sheet-heading">
+                    <h2>Статистика и фильтры</h2>
+                    <button type="button" class="mobile-close-btn" onclick="closeMobileAnalytics()" aria-label="Закрыть аналитику">✕</button>
+                </div>
                 
                 <!-- Сводка по городу -->
                 <div class="glass-card summary-card">
@@ -131,13 +136,13 @@
                 <div class="workspace-header">
                     <div class="view-tabs">
                         <button id="tab-map" class="tab-btn active" onclick="switchTab('map')">
-                            <i class="fa-solid fa-map-location-dot"></i> Карта памяти
+                            <i class="fa-solid fa-map-location-dot"></i><span class="tab-label-desktop">Карта памяти</span><span class="tab-label-mobile">Карта</span>
                         </button>
                         <button id="tab-network" class="tab-btn" onclick="switchTab('network')">
-                            <i class="fa-solid fa-circle-nodes"></i> Сеть персоналий
+                            <i class="fa-solid fa-circle-nodes"></i><span class="tab-label-desktop">Сеть персоналий</span><span class="tab-label-mobile">Сеть</span>
                         </button>
                         <button id="tab-gallery" class="tab-btn" onclick="switchTab('gallery')">
-                            <i class="fa-solid fa-images"></i> Стена памяти
+                            <i class="fa-solid fa-images"></i><span class="tab-label-desktop">Стена памяти</span><span class="tab-label-mobile">Портреты</span>
                         </button>
                     </div>
                     
@@ -146,6 +151,9 @@
                         <input type="text" id="street-search" placeholder="Поиск улицы или персоны..." oninput="handleSearch()">
                         <div id="search-suggestions" class="suggestions-dropdown"></div>
                     </div>
+                    <button type="button" class="mobile-analytics-btn" id="mobile-analytics-btn" onclick="openMobileAnalytics()" aria-controls="analytics-sidebar" aria-expanded="false">
+                        <i class="fa-solid fa-chart-simple" aria-hidden="true"></i> <span>Аналитика</span>
+                    </button>
                 </div>
 
                 <!-- Интерактивная карта -->
@@ -183,7 +191,7 @@
                 <!-- Стена памяти -->
                 <div id="gallery-view" class="view-container">
                     <div class="gallery-header">
-                        <h3><i class="fa-solid fa-images"></i> Стена памяти <span id="gallery-count"></span></h3>
+                        <h3><i class="fa-solid fa-images"></i><span class="tab-label-desktop">Стена памяти</span><span class="tab-label-mobile">Портреты</span> <span id="gallery-count"></span></h3>
                         <div class="gallery-search">
                             <i class="fa-solid fa-magnifying-glass"></i>
                             <input type="text" id="gallery-search-input" placeholder="Поиск персоны..." oninput="handleGallerySearch()" aria-label="Поиск персоны в стене памяти">
@@ -197,7 +205,12 @@
             </section>
 
             <!-- Правая панель деталей -->
-            <section class="details-sidebar">
+            <div id="mobile-backdrop" class="mobile-backdrop" onclick="closeMobileDetails()" aria-hidden="true"></div>
+            <section class="details-sidebar" id="details-sidebar" aria-label="Сведения об улице">
+                <div class="mobile-detail-heading">
+                    <span>История названия</span>
+                    <button type="button" class="mobile-close-btn" onclick="closeMobileDetails()" aria-label="Закрыть карточку">✕</button>
+                </div>
                 <div class="glass-card detail-card" id="detail-panel">
                     <div class="detail-placeholder" id="detail-placeholder">
                         <i class="fa-solid fa-landmark"></i>
@@ -312,5 +325,6 @@
     
     <!-- Логика приложения -->
     <script src="app.js?v=egg-2026-06-17"></script>
+    <script src="mobile.js?v=2026-11-08-1"></script>
 </body>
 </html>
