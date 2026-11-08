@@ -41,12 +41,6 @@ const MAP_STYLES = {
     soft: 'Мягкая'
 };
 
-const OVERPASS_ENDPOINTS = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.openstreetmap.ru/api/interpreter'
-];
-
 // Версия локальных данных (cache-busting). Меняйте эту строку после обновления JSON в data/,
 // чтобы браузер подтянул свежий файл. Между обновлениями данные кэшируются обычным образом.
 const DATA_VERSION = '2026-06-17-genitive';
@@ -776,111 +770,54 @@ function drawStreetPointFallback(data, loading) {
     }).addTo(highlightGroup);
 }
 
-async function fetchStreetGeometry(input) {
-    // Принимаем либо объект улицы (с lat/lon), либо пр��сто имя – для совместимости.
-    const streetName = typeof input === 'string' ? input : (input && input.street);
-    const lat = (input && typeof input === 'object') ? input.lat : null;
-    const lon = (input && typeof input === 'object') ? input.lon : null;
-    if (!streetName) return [];
+// Local OSM-derived road lines, served by GitHub Pages as a static GeoJSON file.
+let streetGeometryIndexPromise = null;
 
-    const cacheKey = `${CITY.id}:${streetName}`;
-    if (streetGeometryCache.has(cacheKey)) {
-        return streetGeometryCache.get(cacheKey);
-    }
-
-    const [south, west, north, east] = CITY.bbox;
-    const cityBox = `${south},${west},${north},${east}`;
-    const safe = escapeOverpassString(streetName);
-    const rx = escapeOverpassRegex(streetName);
-    // Улицы в OSM могут быть подписаны разными тегами имени.
-    const NAME_KEYS = ['name', 'name:ru', 'alt_name', 'official_name', 'loc_name', 'old_name', 'short_name'];
-
-    const dedupe = (elements) => {
-        const seen = new Set();
-        const out = [];
-        for (const el of elements) {
-            if (el.id != null && seen.has(el.id)) continue;
-            if (el.id != null) seen.add(el.id);
-            out.push(el);
-        }
-        return out;
-    };
-
-    // 1) Точное совпадение по любому из именных тегов.
-    let elements = await runOverpassGeometryQuery(`
-[out:json][timeout:25];
-(
-${NAME_KEYS.map(k => `  way["highway"]["${k}"="${safe}"](${cityBox});`).join('\n')}
-);
-out tags geom;
-`);
-
-    // 2) Регистронезависимое совпадение целиком по любому из именных тегов.
-    if (!elements.length) {
-        elements = await runOverpassGeometryQuery(`
-[out:json][timeout:25];
-(
-${NAME_KEYS.map(k => `  way["highway"]["${k}"~"^${rx}$",i](${cityBox});`).join('\n')}
-);
-out tags geom;
-`);
-    }
-
-    // 3) Запасной вариант: берём все именованные улицы в небольшой окрестности
-    //    маркера и сопоставляем названия с нормализацией (префиксы, ё/е, регистр,
-    //    сокращения). Тёсный bbox защищает от ложных совпадений с одноимёнными улицами.
-    if (!elements.length && typeof lat === 'number' && typeof lon === 'number') {
-        const dLat = 0.016, dLon = 0.028; // ≈ 1.7 км
-        const localBox = `${(lat - dLat).toFixed(5)},${(lon - dLon).toFixed(5)},${(lat + dLat).toFixed(5)},${(lon + dLon).toFixed(5)}`;
-        const nearby = await runOverpassGeometryQuery(`
-[out:json][timeout:25];
-way["highway"]["name"](${localBox});
-out tags geom;
-`);
-        const target = normStreetName(streetName);
-        elements = nearby.filter(el => {
-            const n = normStreetName(el.name);
-            return n && target && (n === target || n.includes(target) || target.includes(n));
+function localGeometryKey(data) {
+    if (!data || data.lat == null || data.lon == null || !data.street) return '';
+    return data.street + '|' + Number(data.lat).toFixed(6) + '|' + Number(data.lon).toFixed(6);
+}
+async function loadLocalStreetGeometryIndex() {
+    if (streetGeometryIndexPromise) return streetGeometryIndexPromise;
+    streetGeometryIndexPromise = fetch('../data/novosibirsk_geometry.geojson?v=2026-11-08-1')
+        .then(response => {
+            if (!response.ok) throw new Error('Local street GeoJSON: HTTP ' + response.status);
+            return response.json();
+        })
+        .then(data => {
+            if (data.type !== 'FeatureCollection' || !Array.isArray(data.features)) {
+                throw new Error('Unexpected local street GeoJSON format');
+            }
+            const index = new Map();
+            for (const feature of data.features) {
+                if (!feature.properties?.key || !feature.geometry) continue;
+                const geometry = feature.geometry;
+                const paths = geometry.type === 'MultiLineString'
+                    ? geometry.coordinates
+                    : geometry.type === 'LineString' ? [geometry.coordinates] : [];
+                const lines = paths.filter(path => Array.isArray(path) && path.length > 1)
+                    .map(path => path.map(([longitude, latitude]) => [latitude, longitude]));
+                if (lines.length) index.set(feature.properties.key, lines);
+            }
+            console.info('Локальная геометрия улиц загружена: ' + index.size + ' объектов');
+            return index;
+        })
+        .catch(error => {
+            streetGeometryIndexPromise = null;
+            throw error;
         });
-    }
-
-    const lines = dedupe(elements).map(el => el.line);
-    streetGeometryCache.set(cacheKey, lines);
-    return lines;
+    return streetGeometryIndexPromise;
 }
 
-async function runOverpassGeometryQuery(query) {
-    let lastError = null;
-
-    for (const endpoint of OVERPASS_ENDPOINTS) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 18000);
-
-        try {
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-                body: new URLSearchParams({ data: query }),
-                signal: controller.signal
-            });
-
-            if (!response.ok) throw new Error(`Overpass ${response.status}`);
-            const payload = await response.json();
-            return (payload.elements || [])
-                .filter(element => Array.isArray(element.geometry) && element.geometry.length > 1)
-                .map(element => ({
-                    id: element.id,
-                    name: (element.tags && (element.tags.name || element.tags['name:ru'] || element.tags.alt_name || element.tags.official_name || element.tags.loc_name || element.tags.old_name)) || '',
-                    line: element.geometry.map(point => [point.lat, point.lon])
-                }));
-        } catch (error) {
-            lastError = error;
-        } finally {
-            clearTimeout(timeoutId);
-        }
-    }
-
-    throw lastError || new Error('Геометрия улицы недоступна');
+async function fetchStreetGeometry(input) {
+    const data = typeof input === 'string' ? streetData.find(s => s.street === input) : input;
+    const key = localGeometryKey(data);
+    if (!key) return [];
+    if (streetGeometryCache.has(key)) return streetGeometryCache.get(key);
+    const index = await loadLocalStreetGeometryIndex();
+    const lines = index.get(key) || [];
+    if (lines.length) streetGeometryCache.set(key, lines);
+    return lines;
 }
 
 function escapeOverpassString(value) {
