@@ -20,7 +20,6 @@
     <!-- Стили приложения -->
     <link rel="stylesheet" href="style.css?v=egg-2026-06-17">
     <link rel="stylesheet" href="mobile.css?v=2026-11-08-1">
-    <link rel="stylesheet" href="street-focus.css?v=2026-11-08-2">
 </head>
 <body>
 
@@ -160,14 +159,6 @@
                 <!-- Интерактивная карта -->
                 <div id="map-view" class="view-container active">
                     <div id="map-element"></div>
-                    <section id="street-focus-banner" class="street-focus-banner" aria-label="Выбранная улица" hidden>
-                        <div class="street-focus-copy">
-                            <strong id="street-focus-name"></strong>
-                            <span id="street-focus-status" role="status" aria-live="polite">Положение на карте</span>
-                        </div>
-                        <button type="button" class="street-focus-history" onclick="openStreetHistoryFromMap()">История</button>
-                        <button type="button" class="street-focus-close" onclick="hideStreetFocusBanner()" aria-label="Скрыть название улицы">×</button>
-                    </section>
                     <div class="map-overlay-controls">
                         <div class="map-style-switcher" aria-label="Стиль карты">
                             <button id="map-style-memory" class="map-style-btn active" type="button" onclick="switchMapStyle('memory')">Память</button>
@@ -333,7 +324,7 @@
     <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js" crossorigin="anonymous"></script>
     
     <!-- Логика приложения -->
-    <script src="app.js?v=2026-11-08-street-focus-2"></script>
-    <script src="mobile.js?v=2026-11-08-2"></script>
+    <script src="app.js?v=egg-2026-06-17"></script>
+    <script src="mobile.js?v=2026-11-08-1"></script>
 </body>
 </html>
