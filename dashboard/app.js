@@ -42,9 +42,9 @@ const MAP_STYLES = {
 };
 
 const OVERPASS_ENDPOINTS = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.openstreetmap.ru/api/interpreter'
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+    'https://overpass-api.de/api/interpreter'
 ];
 
 // Версия локальных данных (cache-busting). Меняйте эту строку после обновления JSON в data/,
@@ -566,6 +566,7 @@ function updateCharts() {
 // Карта
 // ─────────────────────────────────────────────────────────────
 let lastMapViewKey = null;
+let selectedStreetMarker = null;
 
 // 🥚 Пасхалка автора: родное село (ул. М. Зибарева, 14, с. Прокудское).
 // Это не часть датасета и не входит ни в одну статистику –
@@ -605,6 +606,8 @@ function updateMap() {
     const viewKey = `${CITY.id}_${CITY.center[0]}_${CITY.center[1]}`;
     markersGroup.clearLayers();
     highlightGroup.clearLayers();
+    ++activeHighlightRequestId; // Prevent stale geometry responses after changing filters.
+    selectedStreetMarker = null;
 
     if (lastMapViewKey !== viewKey) {
         map.setView(CITY.center, 11);
@@ -649,18 +652,14 @@ function updateMap() {
             `;
             marker.bindPopup(popupContent);
 
-            marker.on('click', () => {
-                showDetails(d);
-                highlightStreetGeometry(d);
-                map.panTo([d.lat, d.lon]);
-            });
+            marker.on('click', () => selectStreetFromMap(d, marker));
             marker.on('mouseover', function () {
                 this.setRadius(10);
                 this.setStyle({ fillOpacity: 1 });
             });
             marker.on('mouseout', function () {
-                this.setRadius(7);
-                this.setStyle({ fillOpacity: 0.88 });
+                this.setRadius(selectedStreetMarker === this ? 12 : (window.matchMedia('(max-width: 1200px)').matches ? 9 : 7));
+                this.setStyle({ fillOpacity: selectedStreetMarker === this ? 1 : 0.88 });
             });
 
             markersGroup.addLayer(marker);
@@ -672,6 +671,50 @@ function updateMap() {
     if (items.length > 0) {
         requestAnimationFrame(addBatch);
     }
+}
+
+// Visible, immediate feedback for map marker selection, including on narrow screens.
+function selectStreetFromMap(data, marker) {
+    if (selectedStreetMarker && selectedStreetMarker !== marker) {
+        selectedStreetMarker.setRadius(window.matchMedia('(max-width: 1200px)').matches ? 9 : 7);
+        selectedStreetMarker.setStyle({fillOpacity: 0.88});
+        selectedStreetMarker.unbindTooltip();
+    }
+    selectedStreetMarker = marker;
+    marker.setRadius(12);
+    marker.setStyle({fillOpacity: 1});
+    const label = document.createElement('span');
+    label.textContent = data.street;
+    marker.bindTooltip(label, {permanent: true, direction: 'top', offset: [0, -13], className: 'selected-street-tooltip'}).openTooltip();
+    // A map tap is about the location first: do not cover it with the mobile details sheet.
+    window.suppressMobileDetailsOnce = true;
+    try { showDetails(data); } finally { window.suppressMobileDetailsOnce = false; }
+    const field = document.getElementById('street-search');
+    if (field) field.value = data.street;
+    const title = document.getElementById('street-focus-name');
+    const banner = document.getElementById('street-focus-banner');
+    if (title) title.textContent = data.street;
+    if (banner) banner.hidden = false;
+    if (window.matchMedia('(max-width: 1200px)').matches) {
+        map.closePopup();
+        if (typeof window.closeMobileDetails === 'function') window.closeMobileDetails();
+    }
+    map.setView([data.lat, data.lon], Math.max(map.getZoom(), 15), {animate: false});
+    highlightStreetGeometry(data);
+}
+
+function openStreetHistoryFromMap() {
+    if (typeof window.openMobileDetails === 'function' && window.matchMedia('(max-width: 1200px)').matches) {
+        window.openMobileDetails();
+    } else {
+        const panel = document.getElementById('detail-panel');
+        if (panel) panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }
+}
+
+function hideStreetFocusBanner() {
+    const banner = document.getElementById('street-focus-banner');
+    if (banner) banner.hidden = true;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -745,7 +788,12 @@ async function highlightStreetGeometry(data) {
         }).addTo(highlightGroup);
 
         if (bounds.length > 1) {
-            map.fitBounds(L.latLngBounds(bounds), { padding: [42, 42], maxZoom: 16 });
+            const smallScreen = window.matchMedia('(max-width: 1200px)').matches;
+            map.fitBounds(L.latLngBounds(bounds), {
+                paddingTopLeft: smallScreen ? [24, 120] : [42, 42],
+                paddingBottomRight: smallScreen ? [24, 40] : [42, 42],
+                maxZoom: 17
+            });
         }
         updateStreetHighlightStatus(`Подсвечена вся улица: ${data.street}`);
     } catch (error) {
@@ -760,6 +808,8 @@ async function highlightStreetGeometry(data) {
 function updateStreetHighlightStatus(text) {
     const status = document.getElementById('street-highlight-status');
     if (status) status.textContent = text;
+    const bannerStatus = document.getElementById('street-focus-status');
+    if (bannerStatus) bannerStatus.textContent = text;
 }
 
 function drawStreetPointFallback(data, loading) {
@@ -777,84 +827,60 @@ function drawStreetPointFallback(data, loading) {
 }
 
 async function fetchStreetGeometry(input) {
-    // Принимаем либо объект улицы (с lat/lon), либо пр��сто имя – для совместимости.
-    const streetName = typeof input === 'string' ? input : (input && input.street);
-    const lat = (input && typeof input === 'object') ? input.lat : null;
-    const lon = (input && typeof input === 'object') ? input.lon : null;
+    const streetName = typeof input === 'string' ? input : input?.street;
+    const lat = typeof input === 'object' ? Number(input?.lat) : NaN;
+    const lon = typeof input === 'object' ? Number(input?.lon) : NaN;
     if (!streetName) return [];
-
-    const cacheKey = `${CITY.id}:${streetName}`;
-    if (streetGeometryCache.has(cacheKey)) {
-        return streetGeometryCache.get(cacheKey);
-    }
+    const cacheKey = `${CITY.id}:${streetName}:${lat.toFixed(3)}:${lon.toFixed(3)}`;
+    if (streetGeometryCache.has(cacheKey)) return streetGeometryCache.get(cacheKey);
 
     const [south, west, north, east] = CITY.bbox;
-    const cityBox = `${south},${west},${north},${east}`;
-    const safe = escapeOverpassString(streetName);
-    const rx = escapeOverpassRegex(streetName);
-    // Улицы в OSM могут быть подписаны разными тегами имени.
-    const NAME_KEYS = ['name', 'name:ru', 'alt_name', 'official_name', 'loc_name', 'old_name', 'short_name'];
+    const variants = streetNameVariants(streetName);
+    const namedTags = ['name','name:ru','alt_name','official_name','loc_name','short_name'];
+    const filters = variants.flatMap(v => namedTags.map(k => `way["highway"]["${k}"="${escapeOverpassString(v)}"](${south},${west},${north},${east});`)).join('\n');
+    // One compact indexed query for all name variants in city bbox.
+    let elements = await runOverpassGeometryQuery(`[out:json][timeout:18];\n(${filters});\nout tags geom;`);
 
-    const dedupe = (elements) => {
-        const seen = new Set();
-        const out = [];
-        for (const el of elements) {
-            if (el.id != null && seen.has(el.id)) continue;
-            if (el.id != null) seen.add(el.id);
-            out.push(el);
-        }
-        return out;
-    };
-
-    // 1) Точное совпадение по любому из именных тегов.
-    let elements = await runOverpassGeometryQuery(`
-[out:json][timeout:25];
-(
-${NAME_KEYS.map(k => `  way["highway"]["${k}"="${safe}"](${cityBox});`).join('\n')}
-);
-out tags geom;
-`);
-
-    // 2) Регистронезависимое совпадение целиком по любому из именных тегов.
-    if (!elements.length) {
-        elements = await runOverpassGeometryQuery(`
-[out:json][timeout:25];
-(
-${NAME_KEYS.map(k => `  way["highway"]["${k}"~"^${rx}$",i](${cityBox});`).join('\n')}
-);
-out tags geom;
-`);
-    }
-
-    // 3) Запасной вариант: берём все именованные улицы в небольшой окрестности
-    //    маркера и сопоставляем названия с нормализацией (префиксы, ё/е, регистр,
-    //    сокращения). Тёсный bbox защищает от ложных совпадений с одноимёнными улицами.
-    if (!elements.length && typeof lat === 'number' && typeof lon === 'number') {
-        const dLat = 0.016, dLon = 0.028; // ≈ 1.7 км
-        const localBox = `${(lat - dLat).toFixed(5)},${(lon - dLon).toFixed(5)},${(lat + dLat).toFixed(5)},${(lon + dLon).toFixed(5)}`;
-        const nearby = await runOverpassGeometryQuery(`
-[out:json][timeout:25];
-way["highway"]["name"](${localBox});
-out tags geom;
-`);
+    // OSM names may differ in word order and abbreviations. When no exact match,
+    // inspect only the streets around the actual point and apply strict normalized matching.
+    if (!elements.length && Number.isFinite(lat) && Number.isFinite(lon)) {
+        const dLat = 0.012, dLon = 0.022;
+        const box = `${(lat-dLat).toFixed(5)},${(lon-dLon).toFixed(5)},${(lat+dLat).toFixed(5)},${(lon+dLon).toFixed(5)}`;
+        const nearby = await runOverpassGeometryQuery(`[out:json][timeout:18];\nway["highway"]["name"](${box});\nout tags geom;`);
         const target = normStreetName(streetName);
-        elements = nearby.filter(el => {
-            const n = normStreetName(el.name);
-            return n && target && (n === target || n.includes(target) || target.includes(n));
-        });
+        elements = nearby.filter(el => normStreetName(el.name) === target);
     }
-
-    const lines = dedupe(elements).map(el => el.line);
-    streetGeometryCache.set(cacheKey, lines);
+    const lines = [];
+    const seen = new Set();
+    for (const el of elements) {
+        if (el.id != null && seen.has(el.id)) continue;
+        seen.add(el.id);
+        lines.push(el.line);
+    }
+    // Keep only successes in cache: allow retry after a temporary endpoint problem.
+    if (lines.length) streetGeometryCache.set(cacheKey, lines);
     return lines;
 }
 
+function streetNameVariants(name) {
+    const s = String(name).replace(/\s+/g, ' ').trim();
+    const variants = new Set([s]);
+    const types = '(?:улица|проспект|переулок|проезд|площадь|бульвар|набережная|шоссе|аллея|тупик|тропинка)';
+    const first = s.match(new RegExp(`^(${types})\\s+(.+)$`, 'i'));
+    if (first) {
+        variants.add(`${first[2]} ${first[1]}`);
+    }
+    const last = s.match(new RegExp(`^(.+)\\s+(${types})$`, 'i'));
+    if (last) variants.add(`${last[2]} ${last[1]}`);
+    variants.add(s.replace(/^улица /i, 'ул. ').replace(/^проспект /i,'пр-т '));
+    return [...variants].filter(Boolean).slice(0, 4);
+}
 async function runOverpassGeometryQuery(query) {
     let lastError = null;
 
     for (const endpoint of OVERPASS_ENDPOINTS) {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 18000);
+        const timeoutId = setTimeout(() => controller.abort(), 8500);
 
         try {
             const response = await fetch(endpoint, {
@@ -864,6 +890,7 @@ async function runOverpassGeometryQuery(query) {
                 signal: controller.signal
             });
 
+            if (response.status === 429) throw new Error('Overpass 429: rate limit');
             if (!response.ok) throw new Error(`Overpass ${response.status}`);
             const payload = await response.json();
             return (payload.elements || [])
@@ -894,11 +921,16 @@ function escapeOverpassRegex(value) {
 // Нормализация названия улицы для устойчивого сопоставления:
 // нижний регистр, ё→е, отбрасывание пунктуации и лишних пробелов.
 function normStreetName(value) {
-    return String(value || '')
-        .toLowerCase()
-        .replace(/\u0451/g, '\u0435')
-        .replace(/[^0-9a-z\u0430-\u044f]+/g, ' ')
-        .trim();
+    let s = String(value || '').toLowerCase().replace(/ё/g, 'е');
+    s = s.replace(/^ул[.]?(?=\s)/u, 'улица')
+        .replace(/^пр[.-]?(?:кт|т)(?=\s)/u, 'проспект');
+    s = s.replace(/[^0-9a-zа-я]+/g,' ').replace(/\s+/g,' ').trim();
+    const types = ['улица','проспект','переулок','проезд','площадь','бульвар','набережная','шоссе','аллея','тупик','тропинка'];
+    const words = s.split(' ');
+    if (words.length > 1 && types.includes(words[words.length-1])) {
+        words.unshift(words.pop());
+    }
+    return words.join(' ');
 }
 
 // ─────────────────────────────────────────────────────────────
