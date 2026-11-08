@@ -1,0 +1,47 @@
+name: One-time Novosibirsk street geometry
+on:
+  push:
+    branches: [gh-pages]
+    paths:
+      - 'scripts/generate_street_geojson.py'
+      - '.github/workflows/generate-geometry.yml'
+permissions:
+  contents: write
+jobs:
+  geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          persist-credentials: true
+      - name: Install OSM extraction tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq osmium-tool
+          python -m pip install --disable-pip-version-check osmium shapely
+      - name: Fetch regional OpenStreetMap extract
+        run: |
+          curl --fail --location --retry 2 --connect-timeout 25 --max-time 900 \
+            --output /tmp/siberia.osm.pbf \
+            https://download.geofabrik.de/russia/siberian-fed-district-latest.osm.pbf
+          ls -lh /tmp/siberia.osm.pbf
+      - name: Clip to the Novosibirsk map area
+        run: |
+          osmium extract --strategy complete_ways \
+            --bbox 82.65,54.78,83.18,55.20 \
+            -o /tmp/novosibirsk.osm.pbf /tmp/siberia.osm.pbf
+          ls -lh /tmp/novosibirsk.osm.pbf
+          rm /tmp/siberia.osm.pbf
+      - name: Generate GeoJSON with matching diagnostics
+        run: |
+          python scripts/generate_street_geojson.py /tmp/novosibirsk.osm.pbf
+          ls -lh data/novosibirsk_geometry.geojson
+      - name: Commit verified geometry to GitHub Pages branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/novosibirsk_geometry.geojson
+          git commit -m 'Add verified offline street GeoJSON from OpenStreetMap'
+          git push origin HEAD:gh-pages
