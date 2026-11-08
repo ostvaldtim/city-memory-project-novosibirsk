@@ -36,7 +36,7 @@
         const original = window.showDetails;
         window.showDetails = function (...args) {
             const result = original.apply(this, args);
-            openMobileDetails();
+            if (!window.suppressMobileDetailsOnce) openMobileDetails();
             return result;
         };
     }
